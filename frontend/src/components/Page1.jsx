@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 
- 
+// Constants
 const API_URL = 'https://dummyjson.com/products';
+const ITEMS_PER_PAGE = 10;
 
 const SORT_OPTIONS = {
     DEFAULT: 'default',
@@ -140,21 +141,24 @@ const ProductRow = ({ product, index }) => {
  
 const Page1 = () => {
     const [products, setProducts] = useState([]);
+    const [totalProducts, setTotalProducts] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
     const [sortBy, setSortBy] = useState(SORT_OPTIONS.DEFAULT);
     const [sortOrder, setSortOrder] = useState(SORT_ORDER.ASC);
+    const [currentPage, setCurrentPage] = useState(1);
 
-    // Fetch products data
+    // Fetch all products data (limit=0 gets all products)
     useEffect(() => {
         const fetchProducts = async () => {
             try {
                 setIsLoading(true);
                 setError(null);
-                const response = await axios.get(API_URL);
+                const response = await axios.get(`${API_URL}?limit=0`);
                 setProducts(response.data.products);
+                setTotalProducts(response.data.total);
             } catch (err) {
                 setError('Failed to fetch products. Please try again later.');
                 console.error('Error fetching products:', err);
@@ -213,6 +217,17 @@ const Page1 = () => {
             });
     }, [products, searchTerm, categoryFilter, sortBy, sortOrder]);
 
+    // Pagination calculations
+    const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, categoryFilter, sortBy, sortOrder]);
+
     // Calculate statistics
     const statistics = useMemo(() => {
         if (products.length === 0) return null;
@@ -258,6 +273,21 @@ const Page1 = () => {
     const handleCategoryChange = useCallback((e) => {
         setCategoryFilter(e.target.value);
     }, []);
+
+    const handlePageChange = useCallback((page) => {
+        setCurrentPage(page);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, []);
+
+    const handlePrevPage = useCallback(() => {
+        setCurrentPage((prev) => Math.max(prev - 1, 1));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, []);
+
+    const handleNextPage = useCallback(() => {
+        setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [totalPages]);
 
     // Render error state
     if (error) {
@@ -410,7 +440,7 @@ const Page1 = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
-                                    {filteredProducts.map((product, index) => (
+                                    {paginatedProducts.map((product, index) => (
                                         <ProductRow
                                             key={product.id}
                                             product={product}
@@ -423,6 +453,74 @@ const Page1 = () => {
 
                         {/* No Results Message */}
                         {filteredProducts.length === 0 && products.length > 0 && <NoResults />}
+
+                        {/* Pagination */}
+                        {filteredProducts.length > 0 && totalPages > 1 && (
+                            <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200">
+                                <div className="text-sm text-gray-700">
+                                    Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
+                                    <span className="font-medium">
+                                        {Math.min(endIndex, filteredProducts.length)}
+                                    </span>{' '}
+                                    of <span className="font-medium">{filteredProducts.length}</span> results
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <button
+                                        onClick={handlePrevPage}
+                                        disabled={currentPage === 1}
+                                        className={`px-3 py-1 rounded-lg border ${
+                                            currentPage === 1
+                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        Previous
+                                    </button>
+                                    
+                                    {/* Page Numbers */}
+                                    <div className="flex space-x-1">
+                                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                            .filter((page) => {
+                                                // Show first, last, current, and neighbors
+                                                return (
+                                                    page === 1 ||
+                                                    page === totalPages ||
+                                                    Math.abs(page - currentPage) <= 1
+                                                );
+                                            })
+                                            .map((page, index, array) => (
+                                                <React.Fragment key={page}>
+                                                    {index > 0 && array[index - 1] !== page - 1 && (
+                                                        <span className="px-2 py-1 text-gray-500">...</span>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handlePageChange(page)}
+                                                        className={`px-3 py-1 rounded-lg border ${
+                                                            currentPage === page
+                                                                ? 'bg-blue-600 text-white border-blue-600'
+                                                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                                                        }`}
+                                                    >
+                                                        {page}
+                                                    </button>
+                                                </React.Fragment>
+                                            ))}
+                                    </div>
+
+                                    <button
+                                        onClick={handleNextPage}
+                                        disabled={currentPage === totalPages}
+                                        className={`px-3 py-1 rounded-lg border ${
+                                            currentPage === totalPages
+                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </section>
                 )}
 
