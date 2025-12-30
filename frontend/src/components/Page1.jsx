@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 
-// Constants
+ 
 const API_URL = 'https://dummyjson.com/products';
 
 const SORT_OPTIONS = {
@@ -33,7 +33,7 @@ const getStatusColorClass = (status) => {
         : 'bg-orange-100 text-orange-700';
 };
 
-// Sub-components
+ 
 const SortIcon = ({ column, sortBy, sortOrder }) => {
     if (sortBy !== column) {
         return <span className="text-gray-400 ml-1">↕</span>;
@@ -137,7 +137,7 @@ const ProductRow = ({ product, index }) => {
     );
 };
 
-// Main Component
+ 
 const Page1 = () => {
     const [products, setProducts] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -228,7 +228,7 @@ const Page1 = () => {
         };
     }, [products, categories]);
 
-    // Handlers - Single click cycles: ASC → DESC → DEFAULT
+     
     const handleSort = useCallback((column) => {
         if (sortBy !== column) {
             // New column: start with ascending
