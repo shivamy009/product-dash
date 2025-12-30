@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 
 // Constants
-const API_URL = 'https://dummyjson.com/products';
+const API_BASE_URL = 'https://dummyjson.com/products';
 const ITEMS_PER_PAGE = 10;
 
 const SORT_OPTIONS = {
@@ -34,7 +34,7 @@ const getStatusColorClass = (status) => {
         : 'bg-orange-100 text-orange-700';
 };
 
- 
+// Sub-components
 const SortIcon = ({ column, sortBy, sortOrder }) => {
     if (sortBy !== column) {
         return <span className="text-gray-400 ml-1">↕</span>;
@@ -138,27 +138,128 @@ const ProductRow = ({ product, index }) => {
     );
 };
 
- 
+// Main Component
 const Page1 = () => {
+    // Data state
     const [products, setProducts] = useState([]);
     const [totalProducts, setTotalProducts] = useState(0);
+    const [categories, setCategories] = useState([]);
+    
+    // UI state
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    
+    // Filter state
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
     const [sortBy, setSortBy] = useState(SORT_OPTIONS.DEFAULT);
     const [sortOrder, setSortOrder] = useState(SORT_ORDER.ASC);
     const [currentPage, setCurrentPage] = useState(1);
 
-    // Fetch all products data (limit=0 gets all products)
+    // Debounce search term to avoid too many API calls
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    // Fetch categories on mount
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const response = await axios.get(`${API_BASE_URL}/categories`);
+                // API returns array of category objects with slug and name
+                const categoryList = response.data.map(cat => 
+                    typeof cat === 'string' ? cat : cat.slug
+                );
+                setCategories(categoryList);
+            } catch (err) {
+                console.error('Error fetching categories:', err);
+            }
+        };
+
+        fetchCategories();
+    }, []);
+
+    // Fetch products with server-side pagination
     useEffect(() => {
         const fetchProducts = async () => {
             try {
                 setIsLoading(true);
                 setError(null);
-                const response = await axios.get(`${API_URL}?limit=0`);
-                setProducts(response.data.products);
-                setTotalProducts(response.data.total);
+
+                const skip = (currentPage - 1) * ITEMS_PER_PAGE;
+                let url = '';
+                let params = {
+                    limit: ITEMS_PER_PAGE,
+                    skip: skip
+                };
+
+                // Determine which API endpoint to use
+                if (debouncedSearchTerm && !categoryFilter) {
+                    // Search endpoint
+                    url = `${API_BASE_URL}/search`;
+                    params.q = debouncedSearchTerm;
+                } else if (categoryFilter && !debouncedSearchTerm) {
+                    // Category endpoint
+                    url = `${API_BASE_URL}/category/${categoryFilter}`;
+                } else if (debouncedSearchTerm && categoryFilter) {
+                    // Both search and category - use search and filter client-side
+                    url = `${API_BASE_URL}/search`;
+                    params.q = debouncedSearchTerm;
+                    params.limit = 100; // Fetch more to filter
+                    params.skip = 0;
+                } else {
+                    // Default - all products
+                    url = API_BASE_URL;
+                }
+
+                const response = await axios.get(url, { params });
+                let fetchedProducts = response.data.products;
+                let total = response.data.total;
+
+                // If both search and category, filter client-side
+                if (debouncedSearchTerm && categoryFilter) {
+                    fetchedProducts = fetchedProducts.filter(
+                        p => p.category === categoryFilter
+                    );
+                    total = fetchedProducts.length;
+                    // Apply pagination client-side
+                    fetchedProducts = fetchedProducts.slice(skip, skip + ITEMS_PER_PAGE);
+                }
+
+                // Apply sorting client-side (API doesn't support sorting)
+                if (sortBy !== SORT_OPTIONS.DEFAULT) {
+                    fetchedProducts = [...fetchedProducts].sort((a, b) => {
+                        let comparison = 0;
+                        switch (sortBy) {
+                            case SORT_OPTIONS.PRICE:
+                                comparison = a.price - b.price;
+                                break;
+                            case SORT_OPTIONS.RATING:
+                                comparison = a.rating - b.rating;
+                                break;
+                            case SORT_OPTIONS.STOCK:
+                                comparison = a.stock - b.stock;
+                                break;
+                            case SORT_OPTIONS.TITLE:
+                                comparison = a.title.localeCompare(b.title);
+                                break;
+                            case SORT_OPTIONS.DISCOUNT:
+                                comparison = a.discountPercentage - b.discountPercentage;
+                                break;
+                            default:
+                                comparison = 0;
+                        }
+                        return sortOrder === SORT_ORDER.ASC ? comparison : -comparison;
+                    });
+                }
+
+                setProducts(fetchedProducts);
+                setTotalProducts(total);
             } catch (err) {
                 setError('Failed to fetch products. Please try again later.');
                 console.error('Error fetching products:', err);
@@ -168,92 +269,26 @@ const Page1 = () => {
         };
 
         fetchProducts();
-    }, []);
-
-    // Get unique categories
-    const categories = useMemo(() => {
-        return [...new Set(products.map((product) => product.category))].sort();
-    }, [products]);
-
-    // Filter and sort products
-    const filteredProducts = useMemo(() => {
-        const searchLower = searchTerm.toLowerCase();
-
-        return products
-            .filter((product) => {
-                const matchesSearch =
-                    product.title.toLowerCase().includes(searchLower) ||
-                    product.description.toLowerCase().includes(searchLower) ||
-                    (product.brand?.toLowerCase() || '').includes(searchLower);
-
-                const matchesCategory = !categoryFilter || product.category === categoryFilter;
-
-                return matchesSearch && matchesCategory;
-            })
-            .sort((a, b) => {
-                let comparison = 0;
-
-                switch (sortBy) {
-                    case SORT_OPTIONS.PRICE:
-                        comparison = a.price - b.price;
-                        break;
-                    case SORT_OPTIONS.RATING:
-                        comparison = a.rating - b.rating;
-                        break;
-                    case SORT_OPTIONS.STOCK:
-                        comparison = a.stock - b.stock;
-                        break;
-                    case SORT_OPTIONS.TITLE:
-                        comparison = a.title.localeCompare(b.title);
-                        break;
-                    case SORT_OPTIONS.DISCOUNT:
-                        comparison = a.discountPercentage - b.discountPercentage;
-                        break;
-                    default:
-                        comparison = 0;
-                }
-
-                return sortOrder === SORT_ORDER.ASC ? comparison : -comparison;
-            });
-    }, [products, searchTerm, categoryFilter, sortBy, sortOrder]);
-
-    // Pagination calculations
-    const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const endIndex = startIndex + ITEMS_PER_PAGE;
-    const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+    }, [currentPage, debouncedSearchTerm, categoryFilter, sortBy, sortOrder]);
 
     // Reset to page 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, categoryFilter, sortBy, sortOrder]);
+    }, [debouncedSearchTerm, categoryFilter]);
 
-    // Calculate statistics
-    const statistics = useMemo(() => {
-        if (products.length === 0) return null;
+    // Pagination calculations
+    const totalPages = Math.ceil(totalProducts / ITEMS_PER_PAGE);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalProducts);
 
-        const totalPrice = products.reduce((sum, p) => sum + p.price, 0);
-        const totalRating = products.reduce((sum, p) => sum + p.rating, 0);
-
-        return {
-            totalProducts: products.length,
-            totalCategories: categories.length,
-            avgPrice: (totalPrice / products.length).toFixed(2),
-            avgRating: (totalRating / products.length).toFixed(1)
-        };
-    }, [products, categories]);
-
-     
+    // Handlers
     const handleSort = useCallback((column) => {
         if (sortBy !== column) {
-            // New column: start with ascending
             setSortBy(column);
             setSortOrder(SORT_ORDER.ASC);
         } else if (sortOrder === SORT_ORDER.ASC) {
-            // Same column, currently ASC: switch to DESC
             setSortOrder(SORT_ORDER.DESC);
         } else {
-            // Same column, currently DESC: reset to default (no sort)
             setSortBy(SORT_OPTIONS.DEFAULT);
             setSortOrder(SORT_ORDER.ASC);
         }
@@ -264,6 +299,7 @@ const Page1 = () => {
         setCategoryFilter('');
         setSortBy(SORT_OPTIONS.DEFAULT);
         setSortOrder(SORT_ORDER.ASC);
+        setCurrentPage(1);
     }, []);
 
     const handleSearchChange = useCallback((e) => {
@@ -312,6 +348,9 @@ const Page1 = () => {
                 {/* Header */}
                 <header className="mb-6">
                     <h1 className="text-3xl font-bold text-gray-800">Products Table View</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Server-side pagination • Data fetched per page
+                    </p>
                 </header>
 
                 {/* Search and Filters */}
@@ -348,13 +387,13 @@ const Page1 = () => {
                                 id="category"
                                 value={categoryFilter}
                                 onChange={handleCategoryChange}
-                                className="w-full h-10.5 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+                                className="w-full h-[42px] px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
                                 aria-label="Filter by category"
                             >
                                 <option value="">All Categories</option>
                                 {categories.map((category) => (
                                     <option key={category} value={category}>
-                                        {capitalizeFirst(category)}
+                                        {capitalizeFirst(category.replace(/-/g, ' '))}
                                     </option>
                                 ))}
                             </select>
@@ -374,7 +413,15 @@ const Page1 = () => {
 
                     {/* Results Count */}
                     <div className="mt-4 text-sm text-gray-600" aria-live="polite">
-                        Showing {filteredProducts.length} of {products.length} products
+                        {isLoading ? (
+                            'Loading...'
+                        ) : (
+                            <>
+                                Showing {products.length > 0 ? startIndex + 1 : 0} - {endIndex} of {totalProducts} products
+                                {debouncedSearchTerm && ` for "${debouncedSearchTerm}"`}
+                                {categoryFilter && ` in ${capitalizeFirst(categoryFilter.replace(/-/g, ' '))}`}
+                            </>
+                        )}
                     </div>
                 </section>
 
@@ -440,7 +487,7 @@ const Page1 = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
-                                    {paginatedProducts.map((product, index) => (
+                                    {products.map((product, index) => (
                                         <ProductRow
                                             key={product.id}
                                             product={product}
@@ -452,24 +499,22 @@ const Page1 = () => {
                         </div>
 
                         {/* No Results Message */}
-                        {filteredProducts.length === 0 && products.length > 0 && <NoResults />}
+                        {products.length === 0 && <NoResults />}
 
                         {/* Pagination */}
-                        {filteredProducts.length > 0 && totalPages > 1 && (
-                            <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200">
+                        {totalProducts > 0 && totalPages > 1 && (
+                            <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200 gap-3">
                                 <div className="text-sm text-gray-700">
-                                    Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
-                                    <span className="font-medium">
-                                        {Math.min(endIndex, filteredProducts.length)}
-                                    </span>{' '}
-                                    of <span className="font-medium">{filteredProducts.length}</span> results
+                                    Page <span className="font-medium">{currentPage}</span> of{' '}
+                                    <span className="font-medium">{totalPages}</span>
+                                    {' '}({totalProducts} total products)
                                 </div>
                                 <div className="flex items-center space-x-2">
                                     <button
                                         onClick={handlePrevPage}
-                                        disabled={currentPage === 1}
+                                        disabled={currentPage === 1 || isLoading}
                                         className={`px-3 py-1 rounded-lg border ${
-                                            currentPage === 1
+                                            currentPage === 1 || isLoading
                                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                 : 'bg-white text-gray-700 hover:bg-gray-100'
                                         }`}
@@ -481,7 +526,6 @@ const Page1 = () => {
                                     <div className="flex space-x-1">
                                         {Array.from({ length: totalPages }, (_, i) => i + 1)
                                             .filter((page) => {
-                                                // Show first, last, current, and neighbors
                                                 return (
                                                     page === 1 ||
                                                     page === totalPages ||
@@ -495,11 +539,12 @@ const Page1 = () => {
                                                     )}
                                                     <button
                                                         onClick={() => handlePageChange(page)}
+                                                        disabled={isLoading}
                                                         className={`px-3 py-1 rounded-lg border ${
                                                             currentPage === page
                                                                 ? 'bg-blue-600 text-white border-blue-600'
                                                                 : 'bg-white text-gray-700 hover:bg-gray-100'
-                                                        }`}
+                                                        } ${isLoading ? 'cursor-not-allowed opacity-50' : ''}`}
                                                     >
                                                         {page}
                                                     </button>
@@ -509,9 +554,9 @@ const Page1 = () => {
 
                                     <button
                                         onClick={handleNextPage}
-                                        disabled={currentPage === totalPages}
+                                        disabled={currentPage === totalPages || isLoading}
                                         className={`px-3 py-1 rounded-lg border ${
-                                            currentPage === totalPages
+                                            currentPage === totalPages || isLoading
                                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                 : 'bg-white text-gray-700 hover:bg-gray-100'
                                         }`}
@@ -524,24 +569,22 @@ const Page1 = () => {
                     </section>
                 )}
 
-                {/* Summary Statistics */}
-                {!isLoading && statistics && (
-                    <section className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4" aria-label="Statistics">
-                        <StatCard label="Total Products" value={statistics.totalProducts} />
+                {/* Info Card */}
+                {!isLoading && (
+                    <section className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4" aria-label="Statistics">
+                        <StatCard 
+                            label="Current Page Products" 
+                            value={products.length} 
+                        />
                         <StatCard
-                            label="Categories"
-                            value={statistics.totalCategories}
+                            label="Total Products"
+                            value={totalProducts}
                             colorClass="text-blue-600"
                         />
                         <StatCard
-                            label="Avg. Price"
-                            value={`$${statistics.avgPrice}`}
+                            label="Total Pages"
+                            value={totalPages}
                             colorClass="text-green-600"
-                        />
-                        <StatCard
-                            label="Avg. Rating"
-                            value={`★ ${statistics.avgRating}`}
-                            colorClass="text-yellow-600"
                         />
                     </section>
                 )}
