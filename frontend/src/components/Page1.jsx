@@ -286,9 +286,9 @@ const Page1 = () => {
 
                 {/* Search and Filters */}
                 <section className="bg-white rounded-lg shadow-md p-4 mb-6" aria-label="Filters">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex flex-col md:flex-row gap-4">
                         {/* Search Input */}
-                        <div>
+                        <div className="flex-1">
                             <label
                                 htmlFor="search"
                                 className="block text-sm font-medium text-gray-700 mb-1"
@@ -307,7 +307,7 @@ const Page1 = () => {
                         </div>
 
                         {/* Category Filter */}
-                        <div>
+                        <div className="flex-1">
                             <label
                                 htmlFor="category"
                                 className="block text-sm font-medium text-gray-700 mb-1"
@@ -318,7 +318,7 @@ const Page1 = () => {
                                 id="category"
                                 value={categoryFilter}
                                 onChange={handleCategoryChange}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+                                className="w-full h-10.5 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
                                 aria-label="Filter by category"
                             >
                                 <option value="">All Categories</option>
