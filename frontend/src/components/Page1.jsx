@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 
-// Constants
+ 
 const API_BASE_URL = 'https://dummyjson.com/products';
 const ITEMS_PER_PAGE = 10;
 
@@ -138,7 +138,7 @@ const ProductRow = ({ product, index }) => {
     );
 };
 
-// Main Component
+ 
 const Page1 = () => {
     // Data state
     const [products, setProducts] = useState([]);
